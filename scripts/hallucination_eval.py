@@ -20,7 +20,8 @@ from datetime import datetime
 from pathlib import Path
 
 HOME = Path.home()
-SCRIPTS = HOME / ".openclaw/workspace/scripts"
+HERE = Path(__file__).resolve().parent
+SCRIPTS = Path(os.environ.get("MEMCHECK_SCRIPTS", HERE))
 GOLDEN = Path(os.environ.get("MEM_GOLDEN", HOME / ".openclaw/workspace-main/memory/golden/golden-v0.json"))
 OUT = Path(os.environ.get("MEM_GOLDEN_REPORTS", HOME / ".openclaw/workspace-main/memory/golden/reports"))
 MODELS = json.loads((HOME / ".pi/agent/models.json").read_text())["providers"]

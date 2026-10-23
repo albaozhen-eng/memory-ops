@@ -16,7 +16,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 HOME = Path.home()
-OUT_DIR = HOME / ".openclaw" / "health"
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parent
+# 默认写到仓库内，避免在别人机器上凭空创建 ~/.openclaw/health。
+OUT_DIR = Path(os.environ.get("MEMCHECK_HEALTH", REPO / "health"))
 OUT = OUT_DIR / "memory-health.json"
 
 CAPTURE_LOG = HOME / ".openclaw/workspace/memory/memory_capture_30m.log"

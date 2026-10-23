@@ -18,10 +18,15 @@ from datetime import datetime
 from pathlib import Path
 
 HOME = Path.home()
+HERE = Path(__file__).resolve().parent          # 本仓库的 scripts/
+REPO = HERE.parent                              # 仓库根
 CORPUS_DIR = None
-SCRIPTS = HOME / ".openclaw/workspace/scripts"
+# 默认指向**本仓库自带**的 memory_recall.py，这样 clone 后 demo 无需任何部署即可跑。
+# 接入自己的系统时用环境变量覆盖，例如：
+#   export MEMCHECK_SCRIPTS="$HOME/.openclaw/workspace/scripts"
+SCRIPTS = Path(os.environ.get("MEMCHECK_SCRIPTS", HERE))
 GOLDEN = Path(os.environ.get("MEM_GOLDEN", HOME / ".openclaw/workspace-main/memory/golden/golden-v0.json"))
-REPORT_DIR = Path(os.environ.get("MEM_GOLDEN_REPORTS", HOME / ".openclaw/workspace-main/memory/golden/reports"))
+REPORT_DIR = Path(os.environ.get("MEM_GOLDEN_REPORTS", REPO / "reports"))
 LAYER_ORDER = ["skills", "semantic", "l0", "l1", "facts"]
 TOP_PER_LAYER = 3
 
@@ -152,6 +157,9 @@ def main():
             "recall_any": round(100 * sum(r["hit_any"] for r in rs) / len(rs), 1),
             "p50_ms": int(statistics.median(lat)),
             "p95_ms": lat[max(0, int(len(lat) * 0.95) - 1)],
+            # 检索失败题数。必须单独统计：失败会被记成"未命中"，
+            # 于是基线与本次同时为 0 时门禁会报"0 退步"——那是假绿。
+            "recall_errors": sum(1 for r in rs if r.get("error")),
         }
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M")
@@ -159,16 +167,18 @@ def main():
     report_dir.mkdir(parents=True, exist_ok=True)
     out = {"generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
            "top_per_layer": TOP_PER_LAYER, "summary": summary, "results": results}
-    (REPORT_DIR / f"baseline-{stamp}.json").write_text(json.dumps(out, ensure_ascii=False, indent=1))
+    (report_dir / f"baseline-{stamp}.json").write_text(json.dumps(out, ensure_ascii=False, indent=1))
 
-    print("\n=== 汇总（不含 4 道拒答题）===")
+    _n_refuse = sum(1 for r in results if r["type"] == "R")
+    print("\n=== 汇总（不含 {} 道拒答题）===".format(_n_refuse))
     for v, s in summary.items():
         print(f"{v:9} n={s['n']:2}  recall@top3={s['recall_top3']:5}%  "
               f"hit@any={s['recall_any']:5}%  p50={s['p50_ms']}ms  p95={s['p95_ms']}ms")
     report_path = report_dir / f"baseline-{stamp}.json"
     print("报告：", report_path)
 
-    ACCEPTED = golden_path.parent / "baseline-accepted.json"
+    # 默认与题集同目录；demo 用 MEMCHECK_ACCEPTED 指到 .run/，避免污染工作树。
+    ACCEPTED = Path(os.environ.get("MEMCHECK_ACCEPTED", golden_path.parent / "baseline-accepted.json"))
     cur = summary.get("question", {}).get("recall_top3")
 
     if args.accept:
@@ -185,7 +195,13 @@ def main():
             base = json.loads(ACCEPTED.read_text())
         except (OSError, json.JSONDecodeError):
             base = {"recall_top3": 84.6, "p95_ms": 794, "accepted_at": "seed"}
-        if cur is None or base.get("recall_top3") is None:
+        # 检索崩溃被记成"未命中" → 与基线同时为 0 → 会报"0 退步、绿"。
+        # 分数不可信时必须报红，判词要说清原因。
+        cur_err = summary.get("question", {}).get("recall_errors") or 0
+        if cur_err:
+            delta, level = None, "red"
+            verdict = "{} 题检索失败，分数不可信（失败被记成未命中）".format(cur_err)
+        elif cur is None or base.get("recall_top3") is None:
             delta, level, verdict = None, "red", "无数据"
         else:
             delta = round(cur - base["recall_top3"], 1)
@@ -198,7 +214,7 @@ def main():
             else:
                 level, verdict = "red", "退步 {:+.1f} 点".format(delta)
 
-        HEALTH = HOME / ".openclaw/health"
+        HEALTH = Path(os.environ.get("MEMCHECK_HEALTH", REPO / "health"))
         HEALTH.mkdir(parents=True, exist_ok=True)
         payload = {
             "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),

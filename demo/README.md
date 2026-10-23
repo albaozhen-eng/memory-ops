@@ -1,15 +1,11 @@
 # Demo：5 天合成语料 + 22 题
 
-这个目录让任何人 clone 后 **30 秒内看到工具在跑**，不需要接入自己的记忆系统。
+这个目录让任何人 clone 后 **30 秒内看到工具在跑**，不需要接入自己的记忆系统，也**不会往你的 HOME 里写任何东西**。
 
 ## 跑起来
 
 ```bash
-python3 scripts/golden_eval.py \
-  --golden demo/golden.json \
-  --corpus demo/corpus \
-  --out    demo/reports \
-  --variant question
+bash demo/run.sh
 ```
 
 预期输出：
@@ -18,19 +14,54 @@ python3 scripts/golden_eval.py \
 [question] G01 HIT  ...
 ...
 === 汇总（不含 3 道拒答题）===
-question  n=19  recall@top3=100.0%  hit@any=100.0%  p50=204ms  p95=707ms
+question  n=19  recall@top3=100.0%  hit@any=100.0%  p50=47ms  p95=70ms
 ```
 
-## 为什么是 100%
+`run.sh` 只是把 `demo/` 下的路径用环境变量喂给 `golden_eval.py`，并把所有运行状态限制在 `demo/.run/`。
+如果你要显式调用，等价命令是：
+
+```bash
+MEM_DAILY_NOTES_DIR=demo/corpus \
+MEM_DATA_DIR=demo/.run/data \
+MEMCHECK_SCRIPTS=scripts \
+MEMCHECK_HEALTH=demo/.run/health \
+python3 scripts/golden_eval.py \
+  --golden demo/golden.json --corpus demo/corpus \
+  --out demo/reports --variant question
+```
+
+> 不设这些环境变量也能跑，但 `memory_recall.py` 会把检索指标写进 `~/.openclaw/data/`。
+> `run.sh` 存在的意义就是把这件事堵住。
+
+## 证明它不是"永远绿"
+
+一个只会报绿的门禁等于没有门禁。跑：
+
+```bash
+bash demo/verify.sh
+```
+
+它会做三组**阴性对照**，全部在临时目录里进行：
+
+| 对照 | 破坏方式 | 期望 |
+|---|---|---|
+| 1 | 语料削到只剩 1 篇 | 门禁判**红**（退步） |
+| 2 | 拿掉 `plugmem_config.py`，检索崩溃 | 门禁判**红**，且判词说明"分数不可信（失败被记成未命中）" |
+| 3 | 语料目录清空 | 探针判**红**，exit=2 |
+
+对照 2 值得单独说：检索**崩溃**造成的失败，会被记成"未命中"。如果基线也是 0，门禁会报"0 退步、绿"——那是**假绿**。所以判分前会单独统计失败题数，有失败就直接判红。
+
+## 为什么 demo 是 100%
 
 因为演示语料只有 **5 天、20 条事实**，而且题目是照着它写的。
 这**不代表**真实语料的难度——真实部署上同一套工具测出来是 **92.3%**（见 [METHODOLOGY.md](../METHODOLOGY.md)）。
 
-demo 证明的是三件事：
+demo 证明的是四件事：
 
 1. 检索能返回 `文件:行号`（不是模糊片段）
 2. 判定口径能跑通（证据是否落在前 3 条）
 3. 拒答题不会被算进 recall 分母
+4. 门禁在输入退化时**确实会亮红**（`verify.sh`）
 
 ## 语料长什么样
 

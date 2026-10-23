@@ -2,3 +2,11 @@ __pycache__/
 *.pyc
 .DS_Store
 demo/reports/*.json
+
+# demo 运行产物
+demo/.run/
+demo/reports/
+demo/health/
+reports/
+health/
+demo/baseline-accepted.json
